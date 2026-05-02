@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-service
+  namespace: shopwave-namespace
+spec:
+  selector:
+    app: inventory-service
+  ports:
+    - protocol: TCP
+      port: 8083
+      targetPort: 8083

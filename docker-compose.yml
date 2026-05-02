@@ -1,0 +1,255 @@
+version: '3.8'
+
+services:
+  # --- Veritabanı (Ana Veri Kaynağı) ---
+  postgres:
+    image: postgres:15-alpine
+    container_name: shopwave-postgres
+    environment:
+      - POSTGRES_USER=root
+      - POSTGRES_PASSWORD=root
+      - POSTGRES_DB=shopwave_db # İleride her servis kendi şemasını açacak
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+
+    networks:
+      - shopwave-network
+
+  # --- Cache & Rate Limiting ---
+  redis:
+    image: redis:7-alpine
+    container_name: shopwave-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - shopwave-network
+
+  # --- Event-Driven Omurga (Kafka) ---
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: shopwave-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - shopwave-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: shopwave-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: shopwave-zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - shopwave-network
+
+  # --- Observability (Zipkin - Şimdilik sadece bu kalsın, Prom/Grafana'yı monitoring dosyasına alırız) ---
+  zipkin:
+    image: openzipkin/zipkin
+    container_name: shopwave-zipkin
+    ports:
+      - "9411:9411"
+    networks:
+      - shopwave-network
+
+  # 1. API Gateway
+  api-gateway:
+    build:
+      context: .
+      dockerfile: ./api-gateway/Dockerfile
+    container_name: shopwave-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - REDIS_HOST=shopwave-redis
+      - REDIS_PORT=6379
+      - AUTH_SERVICE_URL=http://auth-service:8081
+      - PRODUCT_SERVICE_URL=http://product-service:8082
+      - INVENTORY_SERVICE_URL=http://inventory-service:8083
+      - ORDER_SERVICE_URL=http://order-service:8084
+      - PAYMENT_SERVICE_URL=http://payment-service:8085
+      - SHIPPING_SERVICE_URL=http://shipping-service:8086
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8087
+      - MANAGEMENT_ZIPKIN_TRACING_ENDPOINT=http://zipkin:9411/api/v2/spans
+      - MANAGEMENT_TRACING_SAMPLING_PROBABILITY=1.0
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,prometheus,metrics
+    depends_on:
+      - redis
+    networks:
+      - shopwave-network
+
+  # 2. Auth Service
+  auth-service:
+    build:
+      context: .
+      dockerfile: ./auth-service/Dockerfile
+    container_name: shopwave-auth-service
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/shopwave_auth
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - MANAGEMENT_ZIPKIN_TRACING_ENDPOINT=http://zipkin:9411/api/v2/spans
+      - MANAGEMENT_TRACING_SAMPLING_PROBABILITY=1.0
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,prometheus,metrics
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - shopwave-network
+
+  # 3. Product Service
+  product-service:
+    build:
+      context: .
+      dockerfile: ./product-service/Dockerfile
+    container_name: shopwave-product-service
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/shopwave_product
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_HOST=shopwave-redis
+      - REDIS_PORT=6379
+      - MANAGEMENT_ZIPKIN_TRACING_ENDPOINT=http://zipkin:9411/api/v2/spans
+      - MANAGEMENT_TRACING_SAMPLING_PROBABILITY=1.0
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,prometheus,metrics
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - shopwave-network
+
+  # 4. Inventory Service
+  inventory-service:
+    build:
+      context: .
+      dockerfile: ./inventory-service/Dockerfile
+    container_name: shopwave-inventory-service
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/shopwave_inventory
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - MANAGEMENT_ZIPKIN_TRACING_ENDPOINT=http://zipkin:9411/api/v2/spans
+      - MANAGEMENT_TRACING_SAMPLING_PROBABILITY=1.0
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,prometheus,metrics
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - shopwave-network
+
+  # 5. Order Service (Patron Servis)
+  order-service:
+    build:
+      context: .
+      dockerfile: ./order-service/Dockerfile
+    container_name: shopwave-order-service
+    ports:
+      - "8084:8084"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/shopwave_order
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - MANAGEMENT_ZIPKIN_TRACING_ENDPOINT=http://zipkin:9411/api/v2/spans
+      - MANAGEMENT_TRACING_SAMPLING_PROBABILITY=1.0
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,prometheus,metrics
+      - PRODUCT_SERVICE_URL=http://product-service:8082 # Circuit Breaker için!
+    depends_on:
+      - postgres
+      - kafka
+      - product-service
+    networks:
+      - shopwave-network
+
+  # 6. Payment Service
+  payment-service:
+    build:
+      context: .
+      dockerfile: ./payment-service/Dockerfile
+    container_name: shopwave-payment-service
+    ports:
+      - "8085:8085"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/shopwave_payment
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - MANAGEMENT_ZIPKIN_TRACING_ENDPOINT=http://zipkin:9411/api/v2/spans
+      - MANAGEMENT_TRACING_SAMPLING_PROBABILITY=1.0
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,prometheus,metrics
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - shopwave-network
+
+  # 7. Shipping Service
+  shipping-service:
+    build:
+      context: .
+      dockerfile: ./shipping-service/Dockerfile
+    container_name: shopwave-shipping-service
+    ports:
+      - "8086:8086"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/shopwave_shipping
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - MANAGEMENT_ZIPKIN_TRACING_ENDPOINT=http://zipkin:9411/api/v2/spans
+      - MANAGEMENT_TRACING_SAMPLING_PROBABILITY=1.0
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,prometheus,metrics
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - shopwave-network
+
+  # 8. Notification Service
+  notification-service:
+    build:
+      context: .
+      dockerfile: ./notification-service/Dockerfile
+    container_name: shopwave-notification-service
+    ports:
+      - "8087:8087"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/shopwave_notification
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - MANAGEMENT_ZIPKIN_TRACING_ENDPOINT=http://zipkin:9411/api/v2/spans
+      - MANAGEMENT_TRACING_SAMPLING_PROBABILITY=1.0
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,prometheus,metrics
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - shopwave-network
+
+volumes:
+  postgres_data:
+
+networks:
+  shopwave-network:
+    driver: bridge

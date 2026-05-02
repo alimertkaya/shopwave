@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-configmap
+  namespace: shopwave-namespace
+data:
+  SPRING_DATASOURCE_USERNAME: "root"
+  AUTH_DB_URL: "jdbc:postgresql://postgres:5432/shopwave_auth"
+  PRODUCT_DB_URL: "jdbc:postgresql://postgres:5432/shopwave_product"
+  INVENTORY_DB_URL: "jdbc:postgresql://postgres:5432/shopwave_inventory"
+  ORDER_DB_URL: "jdbc:postgresql://postgres:5432/shopwave_order"
+  PAYMENT_DB_URL: "jdbc:postgresql://postgres:5432/shopwave_payment"
+  SHIPPING_DB_URL: "jdbc:postgresql://postgres:5432/shopwave_shipping"
+  NOTIFICATION_DB_URL: "jdbc:postgresql://postgres:5432/shopwave_notification"

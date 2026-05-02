@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 15s # Varsayılan olarak her 15 saniyede bir metrikleri çeker
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'shopwave-microservices'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets:
+          - 'shopwave-api-gateway:8080'
+          - 'shopwave-auth-service:8081'
+          - 'shopwave-product-service:8082'
+          - 'shopwave-inventory-service:8083'
+          - 'shopwave-order-service:8084'
+          - 'shopwave-payment-service:8085'
+          - 'shopwave-shipping-service:8086'
+          - 'shopwave-notification-service:8087'
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: 'shopwave-([^:]+)(:\d+)?'
+        target_label: application
+        replacement: '$1'

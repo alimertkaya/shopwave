@@ -1,0 +1,73 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: api-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  cloud:
+    gateway:
+      routes:
+        # 1. AUTH SERVICE
+        - id: auth-service
+          uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/auth/**
+          # Auth servisinin kendi güvenliği olduğu için JWT filtresi koymuyoruz
+
+        # 2. PRODUCT SERVICE
+        - id: product-service
+          uri: ${PRODUCT_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/products/**
+          filters:
+            - AuthenticationFilter
+
+        # 3. INVENTORY SERVICE
+        - id: inventory-service
+          uri: ${INVENTORY_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/inventories/**
+          filters:
+            - AuthenticationFilter
+
+        # 4. ORDER SERVICE
+        - id: order-service
+          uri: ${ORDER_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/orders/**
+          filters:
+            - AuthenticationFilter
+
+        # 5. PAYMENT SERVICE
+        - id: payment-service
+          uri: ${PAYMENT_SERVICE_URL:http://localhost:8085}
+          predicates:
+            - Path=/api/payments/**
+          filters:
+            - AuthenticationFilter
+
+        # 6. SHIPPING SERVICE
+        - id: shipping-service
+          uri: ${SHIPPING_SERVICE_URL:http://localhost:8086}
+          predicates:
+            - Path=/api/shipments/**
+          filters:
+            - AuthenticationFilter
+
+        # 7. NOTIFICATION SERVICE
+        - id: notification-service
+          uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8087}
+          predicates:
+            - Path=/api/notifications/**
+          filters:
+            - AuthenticationFilter
+
+jwt:
+  secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}

@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway-deployment
+  namespace: shopwave-namespace
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: shopwave-api-gateway:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: app-configmap
+            - secretRef:
+                name: jwt-secrets
+          env:
+            - name: AUTH_SERVICE_URL
+              value: "http://auth-service:8081"
+            - name: PRODUCT_SERVICE_URL
+              value: "http://product-service:8082"
+            - name: INVENTORY_SERVICE_URL
+              value: "http://inventory-service:8083"
+            - name: ORDER_SERVICE_URL
+              value: "http://order-service:8084"
+            - name: PAYMENT_SERVICE_URL
+              value: "http://payment-service:8085"
+            - name: SHIPPING_SERVICE_URL
+              value: "http://shipping-service:8086"
+            - name: NOTIFICATION_SERVICE_URL
+              value: "http://notification-service:8087"
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            failureThreshold: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
